@@ -8,6 +8,11 @@ const IMG='assets/img/gramofono.webp',PIN='assets/img/eje.png',LOGO='assets/img/
 // geometry measured on the gramophone photo (1402 x 1122)
 const W=1402,H=1122,CX=713.5,CY=697,D=468,K=0.759,PX=938,PY=498,REST=-65,TOP=56;
 const norm=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+/* búsqueda profunda: sin tildes, plural/singular, prefijos de palabra, nombre + descripción + sección + sinónimos */
+const sing=w=>w.length>4&&w.endsWith('es')?w.slice(0,-2):(w.length>3&&w.endsWith('s')?w.slice(0,-1):w);
+const words=s=>norm(s).split(/[^a-z0-9]+/).filter(Boolean).map(sing);
+const hit=(tok,ws)=>ws.some(w=>w.startsWith(tok)||(tok.length>=4&&w.includes(tok)));
+const esc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 
 const Ico={
  search:()=>html`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>`,
@@ -111,7 +116,7 @@ function App(){
   useEffect(()=>{if(searching)setTimeout(()=>qRef.current&&qRef.current.focus(),60)},[searching]);
   useEffect(()=>{
     if(!open||!hl)return;
-    const a=setTimeout(()=>{const el=document.getElementById('it-'+hl);if(el)el.scrollIntoView({block:'center',behavior:RM?'auto':'smooth'})},1500);
+    const a=setTimeout(()=>{const sec=hl[0]==='s',el=document.getElementById((sec?'sec-':'it-')+(sec?hl.slice(1):hl));if(el)el.scrollIntoView({block:sec?'start':'center',behavior:RM?'auto':'smooth'})},1500);
     const b=setTimeout(()=>setHl(null),4400);
     return()=>{clearTimeout(a);clearTimeout(b)};
   },[open,hl]);
@@ -165,6 +170,7 @@ function App(){
   const switchOpen=i=>{if(i!==ci&&!busy.current){setCi(i);setHl(null)}};
 
   const closeSearch=skip=>{setSearching(false);setQ('');if(skip!==true&&sbRef.current)sbRef.current.focus()};
+  const goSec=(i,si)=>{closeSearch(true);setCi(i);setHl('s'+i+'-'+si);setTimeout(()=>openRef.current&&openRef.current(),340)};
   const goTo=(i,si,j)=>{closeSearch(true);setCi(i);setHl(i+'-'+si+'-'+j);setTimeout(()=>openRef.current&&openRef.current(),340)};
   useEffect(()=>{
     const k=e=>{if(e.key!=='Escape')return;if(searching)closeSearch();else closeDisc()};
@@ -172,8 +178,29 @@ function App(){
   });
 
   const onPanelScroll=e=>{const f=fin.current;if(!open||!f||f.wide||busy.current)return;discRef.current.style.transform=T(f.dx,f.dy-e.currentTarget.scrollTop,f.s,1,0,0)};
-  const qt=q.trim(),nq=norm(qt);
-  const res=qt?CATS.flatMap((c,i)=>c.sections.flatMap((s,si)=>s.items.map((it,j)=>({c,s,i,si,j,it})))).filter(o=>norm(o.it[0]+' '+o.it[2]).includes(nq)):[];
+  const qt=q.trim(),toks=words(qt),ready2=norm(qt).replace(/[^a-z0-9]/g,'').length>=2;
+  const secHits=[],res=[];
+  if(ready2&&toks.length){
+    let ord=0;
+    CATS.forEach((c,i)=>c.sections.forEach((s,si)=>{
+      const ws=words(s.title+' '+(s.kw||''));
+      if(toks.every(t=>hit(t,ws)))secHits.push({c,s,i,si,n:s.items.filter(x=>!x[4]).length});
+      s.items.forEach((it,j)=>{
+        const nm=words(it[0]),ds=words(it[2]||''),all=[...nm,...ds,...ws];
+        if(!toks.every(t=>hit(t,all)))return;
+        const sc=toks.reduce((a,t)=>a+(hit(t,nm)?10:hit(t,ws)?6:2),0)+(norm(it[0]).startsWith(norm(qt))?5:0);
+        res.push({c,s,i,si,j,it,sc,ord:ord++});
+      });
+    }));
+    res.sort((a,b)=>b.sc-a.sc||a.ord-b.ord);
+  }
+  const mark=text=>{
+    const n=norm(text);if(!toks.length||n.length!==text.length)return text;
+    const rg=[];toks.forEach(t=>{const re=new RegExp('(^|[^a-z0-9])('+esc(t)+')','g');let m;while((m=re.exec(n)))rg.push([m.index+m[1].length,m.index+m[1].length+t.length])});
+    if(!rg.length)return text;rg.sort((a,b)=>a[0]-b[0]);
+    const out=[];let p=0;rg.forEach(([a,b],k)=>{if(a<p)return;if(a>p)out.push(text.slice(p,a));out.push(html`<mark key=${k}>${text.slice(a,b)}</mark>`);p=b});
+    if(p<text.length)out.push(text.slice(p));return out;
+  };
   const pct=v=>`${v*100}%`,inert=dim?'':undefined;
   return html`<${React.Fragment}>
     <header className="hd" inert=${inert}>
@@ -222,7 +249,7 @@ function App(){
           <span className="pcount">${dishes(cat)} opciones</span>
         </div>
         ${cat.sections.map((s,si)=>html`<section key=${s.title} className="sec">
-          <h3 className="sech">${s.title}</h3>
+          <h3 id=${`sec-${ci}-${si}`} className=${'sech'+(hl===`s${ci}-${si}`?' hl':'')}>${s.title}</h3>
           ${s.note&&html`<p className="note">${s.note}</p>`}
           <ol className="trks">
             ${s.items.map((it,j)=>{const ex=!!it[4];return html`<li key=${j} id=${`it-${ci}-${si}-${j}`} className=${'trk'+(ex?' ex':'')+(hl===`${ci}-${si}-${j}`?' hl':'')}>
@@ -243,11 +270,14 @@ function App(){
         <button className="sclose" onClick=${()=>closeSearch()}>Cerrar</button>
       </div>
       <div className="sres" aria-live="polite">
-        ${!qt?html`<p className="smsg">Escribe el nombre de un plato o un ingrediente.</p>`
-          :res.length===0?html`<p className="smsg">No encontramos “${qt}”. Prueba con otra palabra.</p>`
-          :html`<p className="scount">${res.length} ${res.length===1?'resultado':'resultados'}</p>
-            <ul>${res.map(o=>html`<li key=${o.i+'-'+o.si+'-'+o.j}><button className="res" onClick=${()=>goTo(o.i,o.si,o.j)}>
-              <span className="rn">${o.it[0]}</span><span className="rp">${o.it[1]}</span><span className="rc">${o.s.title}</span></button></li>`)}</ul>`}
+        ${!ready2?html`<div><p className="smsg">Busca por plato, ingrediente o sección. Por ejemplo: perro, queso, jugo.</p>
+            <div className="chips">${SUGGEST.map(s=>html`<button key=${s} className="chip" onClick=${()=>{setQ(s);if(qRef.current)qRef.current.focus()}}>${s}</button>`)}</div></div>`
+          :(res.length===0&&secHits.length===0)?html`<p className="smsg">No encontramos “${qt}”. Prueba con otra palabra, por ejemplo: pizza, pollo o jugo.</p>`
+          :html`<div><p className="scount">${res.length+secHits.length} ${res.length+secHits.length===1?'resultado':'resultados'}</p>
+            <ul>
+              ${secHits.map(o=>html`<li key=${'s'+o.i+'-'+o.si}><button className="res sc" onClick=${()=>goSec(o.i,o.si)}><span className="rn">${mark(o.s.title)}</span><span className="rp">${o.n} opciones</span><span className="rc">Ver toda la sección</span></button></li>`)}
+              ${res.map(o=>html`<li key=${o.i+'-'+o.si+'-'+o.j}><button className="res" onClick=${()=>goTo(o.i,o.si,o.j)}><span className="rn">${mark(o.it[0])}</span><span className="rp">${o.it[1]}</span><span className="rc">${o.s.title}</span>${o.it[2]&&html`<span className="rd">${mark(o.it[2])}</span>`}</button></li>`)}
+            </ul></div>`}
       </div>
     </div>
   <//>`;

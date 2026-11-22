@@ -44,6 +44,7 @@ Edita `js/data.js`. Cada disco tiene secciones y cada sección tiene platos:
 - **Foto de un plato**: guarda la imagen en `assets/img/platos/` (mejor en .webp, máximo 800 px de ancho) y ponla como cuarto dato:
   `['Rayuela','$25.000','Masa madurada…','assets/img/platos/rayuela.webp']`. Si no hay foto, no se muestra nada.
 - **Nota de una sección**: propiedad `note:'…'` de la sección (como en Sándwiches).
+- **Búsqueda**: encuentra por nombre, descripción, sección y sinónimos, sin importar tildes ni plural/singular. Cada sección puede llevar `kw:'palabras clave'` (por ejemplo `kw:'perro caliente hot dog'`) para que la encuentren con otros nombres. Los atajos que aparecen al abrir la búsqueda están en `SUGGEST`.
 - **Nuevo disco**: copia un bloque de `CATS` con un `id` nuevo, `name`, `plaque` (texto corto de la placa del estante), `short` (pestaña) y colores `hi`/`lo`.
   El estante se desliza de lado si hay más discos de los que caben en pantalla.
 
